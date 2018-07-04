@@ -20,16 +20,16 @@ Methods Implementaded:
  - Search
  - Print tree
  
-Insertion:
+**Insertion:**
 
 When an item is being inserted in a leaf that is curently full, before inserting, a check is made while trasversing down the tree to see of the is the previous nodes are also full and if yes, they get splitted, this garantees that when a full leaf is reached and a split is aplyied the parent node is able to recieve the key that will be promoted.
 
-Search:
+**Search:**
 
 Starts in the root, compares its keys values with the one to be found, if not there, dives further in the tree following the right child.
 The process e repeated until a leaf without containning the item is reached or the item is found in witch case it returns its position in the file.
 
-Print:
+**Print:**
 
 A queue is created, it will hold all the tree nodes in a given order for later printing.
 
