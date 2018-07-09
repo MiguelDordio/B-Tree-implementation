@@ -1,17 +1,10 @@
 # B-Tree implementation
 B-Tree Implementation in secundary-memory/disk-memory
 
-I will start by saying this implementation was based on the approach taken with B-Trees in the book:
+This implementation was based on the approach taken with B-Trees in the book:
 
 *Introduction to Algorithms, 3rd Edition - Cormen, 2011*
 
-The implementation stores all the b-tree nodes in a binary file, and constantly writes and reads from the said file in order to add new ones and to update the nodes information.
-
-The file created is organized and treated like an array, the tree keeps track of the numbers of nodes it has and where each one is, so, when a new key/item is added a new position in the file/array is given/added.
-
-To access directly to the node in the file fseek() is used to "jump" directly to the node location, witch gives the file "the array like properties".
-
-This implementation lacks the delete method and other small but usefull methods, like get min/max item, etc... (in progress)
 
 Methods Implementaded:
 
@@ -23,6 +16,17 @@ Methods Implementaded:
  - Destroy tree
  - Find Max
  - Find Min
+ 
+ 
+ **File management and B-tree storage:**
+ 
+The implementation stores all the b-tree nodes in a binary file, and constantly writes and reads from the said file in order to add new ones and to update the nodes information.
+
+The file created is organized and treated like an array, the tree keeps track of the file positions already taken and where each node is by giving a new position to a node each time a new one is created.
+
+To access directly to the node in the file *fseek()* is used to "jump" directly to the node location in the file, witch gives the file "array like properties", once the file pointer is pointing to the desired position *freed()* is used to read the content and *fwrite()* to write new content to that location.
+
+The file is only closed and eliminated if the B-tree is destroid.
  
 **Insertion:**
 
