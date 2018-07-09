@@ -18,7 +18,11 @@ Methods Implementaded:
  - Crete B-Tree
  - Insertion
  - Search
+ - Deletion
  - Print tree
+ - Destroy tree
+ - Find Max
+ - Find Min
  
 **Insertion:**
 
