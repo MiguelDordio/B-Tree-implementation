@@ -345,10 +345,12 @@ void bt_delete_safe(btNode node, element key, int order, FILE *fp){
         btNode y = disk_read(node.kids[pos], order, fp);
         if(y.numKeys == t-1){
             borrowed = 0;
+            if(pos > 0){
                 btNode z = disk_read(node.kids[pos-1], order, fp);
                 if(z.numKeys > t - 1){                                 // case 3a
                     bt_borrow_from_left_sibling(node, pos, order, fp); // case 3a
                     borrowed = 1;                                      // case 3a
+                }else{
                     m = pos - 1;
                 }
             }
