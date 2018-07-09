@@ -4,14 +4,20 @@
 //                               HELPER METHODS
 //#############################################################################
 
-btNode disk_read(int disk, int order, FILE *fp){
-    btNode read_node;
+int calculate_offset(int disk, int order){
 
     // calculate the nº of bytes a node has
     int size_of_btNode = (sizeof(int) * 3) + (sizeof(element) * order-1) + (sizeof(int) * order);
 
-    int offset = size_of_btNode * disk;    // calculate the position of the node in the file
-    fseek(fp, offset, SEEK_SET);           // set the file pointer there
+    return size_of_btNode * disk;    // calculate the position of the node in the file
+
+}
+
+btNode disk_read(int disk, int order, FILE *fp){
+    btNode read_node;
+
+    int offset = calculate_offset(disk, order);
+    fseek(fp, offset, SEEK_SET);                                    // set the file pointer there
 
 
     fread(&read_node.numKeys, sizeof(read_node.numKeys), 1, fp);    // read the information from the file
@@ -30,10 +36,7 @@ btNode disk_read(int disk, int order, FILE *fp){
 
 void disk_write(btNode node, int order, FILE *fp){
 
-    // calculate the nº of bytes a node has
-    int size_of_btNode = (sizeof(int) * 3) + (sizeof(element) * order-1) + (sizeof(int) * order);
-
-    int offset = size_of_btNode * node.pos_in_disk;              // calculate the position of the node in the file
+    int offset = calculate_offset(node.pos_in_disk, order);
     fseek(fp, offset, SEEK_SET);                                 // set the file pointer there
 
     fwrite(&node.numKeys, sizeof(node.numKeys), 1, fp);          // write the information to the file
@@ -62,6 +65,19 @@ btNode new_node(int order, int is_leaf) {
 
     return n;
 }
+
+void print_node_keys(btNode node, int order){
+    printf("[");
+    for(int i = 0; i < order-1; i++){
+        if(node.keys[i].key != -1)
+            printf("key: %d, ", node.keys[i].key);
+    }
+    printf("] ");
+}
+
+//#############################################################################
+//                               INSERTION
+//#############################################################################
 
 void bt_split_child(btNode x, int pos, bTree *tree, FILE *fp, int split_root){
 
@@ -172,6 +188,195 @@ btNode bt_insert_nonfull(btNode node, element key, bTree *tree, FILE *fp){
 }
 
 //#############################################################################
+//                               DELETION
+//#############################################################################
+
+element bt_delete_max(btNode node, int order, FILE *fp){
+    if(node.isLeaf == 1) {
+        node.keys[node.numKeys-1].key = -1;
+        node.keys[node.numKeys-1].data = -1;
+        node.numKeys--;
+        disk_write(node, order, fp);
+        return node.keys[node.numKeys-1];
+    }else{
+        btNode x = disk_read(node.kids[node.numKeys], order, fp);
+        bt_delete_max(x, order, fp);
+    }
+}
+
+element bt_delete_min(btNode node, int order, FILE *fp){
+    if(node.isLeaf == 1) {
+        element x = node.keys[0];
+        for(int j = 0; j < node.numKeys; j++)
+            node.keys[j] = node.keys[j+1];
+        node.numKeys--;
+        disk_write(node, order, fp);
+        return x;
+    }else{
+
+        btNode x = disk_read(node.kids[0], order, fp);
+        bt_delete_min(x, order, fp);
+    }
+}
+
+void bt_merge_children(btNode node, int pos, int order, FILE *fp){
+    int t = (order / 2);
+
+    btNode y = disk_read(node.kids[pos], order, fp);   // merge children pos
+    btNode z = disk_read(node.kids[pos+1], order, fp); // and pos+1
+
+    y.keys[t-1] = node.keys[pos];                      // borrow item from the root
+    node.keys[pos].key = -1;                           // delete item the item borrowed
+    node.keys[pos].data = -1;
+    for(int j = 0; j < t-1;j++){                       // transfer kids[pos+1]
+        y.keys[t + j] = z.keys[j];                     // contents to kids[pos]
+    }
+    if(y.isLeaf == 0){
+        for(int j = 0; j < t;j++){
+            y.kids[t + j] = z.kids[j];
+        }
+    }
+    y.numKeys = order -1;                              // kids[pos] is now full
+    for(int j = pos+1; j < node.numKeys;j++){
+        node.keys[j-1] = node.keys[j];
+    }
+    for(int j = pos+2; j < node.numKeys+1;j++){
+        node.kids[j-1] = node.kids[j];
+    }
+    node.numKeys--;
+    //free(z);                                         // delete old kids[pos+1]
+    disk_write(y, order, fp);
+    disk_write(node, order, fp);
+}
+
+void bt_borrow_from_left_sibling(btNode node, int pos, int order, FILE *fp){
+    int t = (order / 2);
+    btNode y = disk_read(node.kids[pos], order, fp);    // node pos`s left
+    btNode z = disk_read(node.kids[pos-1], order, fp);  // sibling is pos-1
+
+    for(int j = t-1; j > 0; j--){                       // make room for
+        y.keys[j] = y.keys[j-1];                        // new 1st key
+    }
+
+    y.keys[0] = node.keys[pos-1];                       // item from the root comes down
+    node.keys[pos-1] = z.keys[z.numKeys-1];             // borrow the last item from the left node
+
+    z.keys[z.numKeys-1].key = -1;                       // remove borrowed item
+    z.keys[z.numKeys-1].data = -1;
+
+    if(y.isLeaf == 0){
+        for(int j = t; j > 1; j--){                     // make room for
+            y.kids[j+1] = y.kids[j];                    // new 1st child
+        }
+        y.kids[1] = z.kids[z.numKeys+1];
+    }
+    y.numKeys = t;
+    z.numKeys--;
+    disk_write(z, order, fp);
+    disk_write(y, order, fp);
+    disk_write(node, order, fp);
+}
+
+void bt_borrow_from_right_sibling(btNode node, int pos, int order, FILE *fp){
+    int t = (order / 2);
+    btNode y = disk_read(node.kids[pos], order, fp);    // node pos`s left
+    btNode z = disk_read(node.kids[pos+1], order, fp);  // sibling is pos+1
+
+    y.keys[y.numKeys] = node.keys[pos];                 // item from the root comes down
+    node.keys[pos] = z.keys[0];                         // borrow the first item from the right node
+
+    for(int j = 0; j < z.numKeys;j++){                  // adjust the keys after of the right node
+        if(j+1 == z.numKeys){
+            z.keys[j].key = -1;
+            z.keys[j].data = -1;
+        }else
+            z.keys[j] = z.keys[j+1];
+    }
+
+
+    if(y.isLeaf == 0){
+        for(int j = t; j > 1; j--){                     // make room for
+            y.kids[j+1] = y.kids[j];                    // new last child
+        }
+        y.kids[1] = z.kids[z.numKeys+1];
+    }
+    y.numKeys = t;
+    z.numKeys--;
+    disk_write(z, order, fp);
+    disk_write(y, order, fp);
+    disk_write(node, order, fp);
+}
+
+void bt_delete_safe(btNode node, element key, int order, FILE *fp){
+    int t = (order / 2);
+    int borrowed; //default
+    int pos = 0;
+    while(pos <= node.numKeys-1 && key.key > node.keys[pos].key)
+        pos++;
+    if(pos <= node.numKeys && key.key == node.keys[pos].key){
+        if(node.isLeaf == 1){                                         // case 1
+            for(int j = pos; j < node.numKeys; j++)                   // case 1
+                node.keys[j] = node.keys[j+1];                        // case 1
+            if(pos == node.numKeys-1){
+                node.keys[pos].key = -1;
+                node.keys[pos].data = -1;
+            }
+            node.numKeys--;                                           // case 1
+            disk_write(node, order, fp);                              // case 1
+        }else{
+            btNode y = disk_read(node.kids[pos], order, fp);
+            if(y.numKeys > t-1){                                      // case 2a
+                node.keys[pos] = bt_delete_max(y, order, fp);         // case 2a
+                disk_write(node, order, fp);                          // case 2a
+            }else{
+                btNode z = disk_read(node.kids[pos+1], order, fp);
+                if(z.numKeys > t-1){                                  // case 2b
+                    node.keys[pos] = bt_delete_min(z, order, fp);     // case 2b
+                    disk_write(node, order, fp);                      // case 2b
+                }else{
+                    bt_merge_children(node, pos, order, fp);          // case 2c
+                    btNode node_child = disk_read(node.kids[pos], order, fp);
+                    bt_delete_safe(node_child, key, order, fp);       // case 2c
+                }
+            }
+        }
+    }else if(node.isLeaf == 0){
+        int m = pos; //default
+        btNode y = disk_read(node.kids[pos], order, fp);
+        if(y.numKeys == t-1){
+            borrowed = 0;
+                btNode z = disk_read(node.kids[pos-1], order, fp);
+                if(z.numKeys > t - 1){                                 // case 3a
+                    bt_borrow_from_left_sibling(node, pos, order, fp); // case 3a
+                    borrowed = 1;                                      // case 3a
+                    m = pos - 1;
+                }
+            }
+            if(borrowed == 0 && pos <= node.numKeys && node.kids[pos+1] != -1){
+                btNode z = disk_read(node.kids[pos+1], order, fp);
+                if(z.numKeys > t - 1){                                 // case 3a
+                    bt_borrow_from_right_sibling(node, pos, order, fp);// case 3a
+                    borrowed = 1;                                      // case 3a
+                }else{
+                    m = pos;
+                }
+            }
+            if(borrowed == 0){                                         // case 3b
+                bt_merge_children(node, m, order, fp);                 // case 3b
+                btNode x = disk_read(node.kids[m], order, fp);
+                y = x;                                                 // case 3b
+            }
+        }
+        if(m != pos){
+            bt_delete_safe(y, key, order, fp);
+        }else{
+            btNode new_y = disk_read(node.kids[pos], order, fp);
+            bt_delete_safe(new_y, key, order, fp);
+        }
+    }
+}
+
+//#############################################################################
 //                               METHODS
 //#############################################################################
 
@@ -227,39 +432,76 @@ int btSearch(btNode node, int order, element key, FILE *fp){
     }
 }
 
+void btDelete(bTree *tree, element key, FILE *fp){
 
-void print_node_keys(btNode node, int order){
-    printf("[");
-    for(int i = 0; i < order-1; i++){
-        if(node.keys[i].key != -1)
-            printf("key: %d, ", node.keys[i].key);
+    btNode root = tree->root;
+    bt_delete_safe(root, key, tree->order, fp);                  // delete the item
+    btNode new_root = disk_read(0, tree->order, fp);
+    if(new_root.numKeys == 0 && (new_root.isLeaf == 0)){         // is the root now empty and not a leaf?
+        btNode x = disk_read(new_root.kids[0], tree->order, fp); // get the first child of the root
+        x.pos_in_disk = 0;                                       // overwrite the previous root info
+        disk_write(x, tree->order, fp);                          // in the file with the child info
+        tree->root = x;                                          // make the child be the root
+    }else{
+        tree->root = new_root;
     }
-    printf("] ");
+}
+
+element btfindMax(btNode node, int order, FILE *fp){
+    if(node.isLeaf == 1) {
+        return node.keys[node.numKeys-1];
+    }else{
+        btNode x = disk_read(node.kids[node.numKeys], order, fp);
+        btfindMax(x, order, fp);
+    }
+}
+
+element btfindMin(btNode node, int order, FILE *fp){
+    if(node.isLeaf == 1) {
+        return node.keys[0];
+    }else{
+
+        btNode x = disk_read(node.kids[0], order, fp);
+        btfindMin(x, order, fp);
+    }
 }
 
 void btPrintTree(bTree *tree, queue *q,FILE *fp){
-    btNode end = { .numKeys = -1};                    // marker to know when a level of the tree ends
-    insert(q, tree->root);                            // insert the root in the queue
-    int item_count= 1;                                // real item/node counter
-    while(!isEmpty(q)){
-        btNode current = removeData(q);               // remove the first item in the queue and return that node
-        if(current.numKeys == -1){                    // was a marker found?
-            printf("\n");
-            insert(q, end);
-            if(item_count == 0)                       // to avoid and endless loop of markers
-                break;                                // when the tree is already printed
-        }else{
-            item_count--;
-            print_node_keys(current, tree->order);
-            if(current.pos_in_disk == 0)              // special case for the root
+    if(tree->root.numKeys == 0){
+        printf("\nThe B-Tree is empty\n");
+    }else{
+        btNode end = { .numKeys = -1};                    // marker to know when a level of the tree ends
+        insert(q, tree->root);                            // insert the root in the queue
+        int item_count= 1;                                // real item/node counter
+        while(!isEmpty(q)){
+            btNode current = removeData(q);               // remove the first item in the queue and return that node
+            if(current.numKeys == -1){                    // was a marker found?
+                printf("\n");
                 insert(q, end);
-            for(int i = 0; i < tree->order; i++){     // insert all the kids os the next node in the queue
-                if(current.kids[i] != -1){
-                    btNode x = disk_read(current.kids[i], tree->order, fp); // get the kid
-                    insert(q, x);
-                    item_count++;
+                if(item_count == 0)                       // to avoid and endless loop of markers
+                    break;                                // when the tree is already printed
+            }else{
+                item_count--;
+                print_node_keys(current, tree->order);
+                if(current.pos_in_disk == 0)              // special case for the root
+                    insert(q, end);
+                for(int i = 0; i < tree->order; i++){     // insert all the kids os the next node in the queue
+                    if(current.kids[i] != -1){
+                        btNode x = disk_read(current.kids[i], tree->order, fp); // get the kid
+                        insert(q, x);
+                        item_count++;
+                    }
                 }
             }
         }
     }
+}
+
+void btDestroy(bTree *tree, FILE *fp){
+    free(tree);
+    fclose(fp);
+    if(remove("file.bin") == 0)
+        printf("\nFile deleted successfully\n");
+    else
+        printf("\nError: unable to delete the file\n");
 }

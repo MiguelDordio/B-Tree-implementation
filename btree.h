@@ -38,21 +38,26 @@ typedef struct queue queue;
 // create a new empty tree
 bTree *btCreate(int order);
 
-/* free a tree
-void btDestroy(btNode t);*/
-
 // return nonzero if key is present in tree
 int btSearch(btNode node, int order, element key, FILE *fp);
 
 // insert a new element into a tree
 void btInsert(bTree *tree, element key, FILE *fp);
 
-/* deletes a key from the tree
-void btDelete(bTree *tree, element *key, int order);*/
-
+// deletes a key from the tree
+void btDelete(bTree *tree, element key, FILE *fp);
 
 // print all keys of the tree from the root
 void btPrintTree(bTree *tree, queue *q,FILE *fp);
+
+// free the tree
+void btDestroy(bTree *tree, FILE *fp);
+
+// find the max element of the tree
+element btfindMax(btNode node, int order, FILE *fp);
+
+// find the min element of the tree
+element btfindMin(btNode node, int order, FILE *fp);
 
 btNode disk_read(int disk, int order, FILE *fp);
 
